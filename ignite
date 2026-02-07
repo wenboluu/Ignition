@@ -161,7 +161,8 @@ expect {
   }
 
   eof {
-    log 0 "\n  ERROR: SSH exited before PIN prompt.\n\n"
+    log 0 "\n  ERROR: SSH exited before PIN prompt.\n"
+    log 0 "  Is your Internet and VPN doing good?\n\n"
     exit 1
   }
 }
