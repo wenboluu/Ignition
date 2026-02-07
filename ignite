@@ -1,0 +1,162 @@
+#!/usr/bin/expect -f
+# SSH login with device-code auth: open URL, paste PIN in browser, send Enter to SSH after a delay.
+# Usage: ignite [options] [server]
+#   quiet, q       errors and outcome only
+#   verbose, v     normal messages (default)
+#   vv             very verbose
+#   LOGIN_VERBOSE=0|1|2  same (0=quiet, 1=verbose, 2=vv)
+# (No -q/-v: expect intercepts leading-dash args.)
+
+set timeout -1
+set server "torch"
+set url "https://login.microsoftonline.com/common/oauth2/deviceauth"
+set browser_auth_wait 4
+if {[info exists env(LOGIN_VERBOSE)]} {
+  set verbose $env(LOGIN_VERBOSE)
+} else {
+  set verbose 1
+}
+
+# Parse word options and optional server from argv
+foreach a $argv {
+  if {$a == "quiet" || $a == "q"} { set verbose 0 } \
+  elseif {$a == "verbose" || $a == "v"} { set verbose 1 } \
+  elseif {$a == "vv"} { set verbose 2 } \
+  elseif {[string index $a 0] != "-"} { set server $a; break }
+}
+
+# -----------------------------------------------------------------------------
+# Logging (timestamp prefix like Python logger)
+# -----------------------------------------------------------------------------
+proc log {level msg} {
+  if {$::verbose >= $level} {
+    set ts [clock format [clock seconds] -format "%Y-%m-%d %H:%M:%S"]
+    send_user "\[$ts\] $msg"
+  }
+}
+
+proc log_line {} {
+  log 2 "  ---\n"
+}
+
+# -----------------------------------------------------------------------------
+# Platform: open URL in default browser
+# -----------------------------------------------------------------------------
+proc open_url {url} {
+  if {$::tcl_platform(platform) == "windows"} {
+    catch { exec start "" $url }
+  } elseif {$::tcl_platform(os) == "Darwin"} {
+    catch { exec open $url & }
+  } else {
+    catch { exec sh -c "xdg-open '$url' 2>/dev/null &" }
+  }
+}
+
+# -----------------------------------------------------------------------------
+# Platform: copy text to clipboard
+# -----------------------------------------------------------------------------
+proc copy_pin {pin} {
+  if {$::tcl_platform(platform) == "windows"} {
+    catch { exec powershell -noprofile -command "Set-Clipboard -Value '$pin'" }
+  } elseif {$::tcl_platform(os) == "Darwin"} {
+    catch { exec sh -c "printf %s '$pin' | pbcopy" }
+  } else {
+    catch { exec sh -c "printf %s '$pin' | xclip -selection clipboard" }
+    catch { exec sh -c "printf %s '$pin' | wl-copy" }
+  }
+}
+
+# -----------------------------------------------------------------------------
+# Platform: send Paste then three Enters (1s between Enters) to focused window
+# -----------------------------------------------------------------------------
+proc send_paste_enter_darwin {} {
+  catch {
+    exec osascript -e "tell application \"System Events\" to keystroke \"v\" using command down" \
+      -e "tell application \"System Events\" to key code 36" \
+      -e "delay 1" -e "tell application \"System Events\" to key code 36" \
+      -e "delay 1" -e "tell application \"System Events\" to key code 36"
+  }
+}
+
+proc send_paste_enter_windows {} {
+  catch {
+    exec powershell -noprofile -command "Add-Type -AssemblyName System.Windows.Forms; \[System.Windows.Forms.SendKeys\]::SendWait('^v'); \[System.Windows.Forms.SendKeys\]::SendWait('{ENTER}'); Start-Sleep -Seconds 1; \[System.Windows.Forms.SendKeys\]::SendWait('{ENTER}'); Start-Sleep -Seconds 1; \[System.Windows.Forms.SendKeys\]::SendWait('{ENTER}')"
+  }
+}
+
+proc send_paste_enter_linux {} {
+  catch { exec sh -c "xdotool key ctrl+v Return; sleep 1; xdotool key Return; sleep 1; xdotool key Return" }
+  catch { exec sh -c "ydotool key ctrl+v 28; sleep 1; ydotool key 28; sleep 1; ydotool key 28" }
+}
+
+proc send_paste_enter {} {
+  exec sleep 1
+  if {$::tcl_platform(platform) == "windows"} { send_paste_enter_windows } \
+  elseif {$::tcl_platform(os) == "Darwin"} { send_paste_enter_darwin } \
+  else { send_paste_enter_linux }
+}
+
+# -----------------------------------------------------------------------------
+# Main: spawn SSH and handle device-code prompt
+# -----------------------------------------------------------------------------
+log_user 0
+spawn ssh -MNf $server
+
+expect {
+  -re {Authenticate with PIN ([A-Za-z0-9]+)} {
+    set pin [string trim $expect_out(1,string)]
+
+    log 1 "\n"
+    log 1 "  Spawned: ssh -MNf $server\n"
+    log 1 "  [string trim $expect_out(buffer)]\n"
+    log 1 "  Device code received.\n"
+    log 2 "  PIN: $pin\n"
+    log_line
+
+    log 1 "  Opening login page in default browser...\n"
+    open_url $url
+    copy_pin $pin
+    log 1 "  PIN copied to clipboard.\n"
+    log_line
+
+    log 1 "  In ~1s we'll send Paste + 3× Enter to the focused window (use the browser).\n"
+    log 1 "  Then we wait ${browser_auth_wait}s and send ENTER to this SSH session.\n"
+    log_line
+
+    send_paste_enter
+
+    log 1 "  Waiting ${browser_auth_wait}s...\n"
+    exec sleep $browser_auth_wait
+
+    send "\r"
+
+    # Short wait to detect obvious auth failure (don't consume success output)
+    set timeout 4
+    set auth_failed 0
+    expect {
+      -re -nocase {(.*permission denied|access denied|authentication failed.*)} {
+        set auth_failed 1
+        set err_line [string trim $expect_out(1,string)]
+      }
+      timeout { }
+    }
+    set timeout -1
+
+    puts "\n"
+    if {$auth_failed} {
+      log 0 "  → Auth failed.\n"
+      if {[info exists err_line] && $err_line != ""} { log 0 "    $err_line\n" }
+      log 0 "  Check browser and try again.\n\n"
+    } else {
+      log 0 "  → SSH session ready. You're in.\n\n"
+    }
+
+    log_user 1
+    interact
+  }
+
+  eof {
+    log 0 "\n  ERROR: SSH exited before PIN prompt.\n\n"
+    exit 1
+  }
+}
