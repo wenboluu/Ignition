@@ -145,3 +145,8 @@ All these settings appear near the top of `ignite`. Adjust them if you want to m
 
 - The script uses your **default browser** and simulates Paste + Enter; it does not install or drive a separate browser.
 - First run may prompt you to accept the host key; with the config above, later runs reuse the same connection while it’s alive.
+
+## Acknowledgements
+
+- The use of `expect` was inspired by [JosiahWayne](https://github.com/JosiahWayne/torch-login). I spent a long time trying to extract the device code from an interactive terminal session, and this approach solves that problem cleanly and reliably.
+- Many thanks to the NYU HPC team for their continued efforts in providing a robust research computing platform for the NYU community. While Torch can be challenging to use at times, I have confidence that the system will continue to improve thanks to the dedication and expertise of the team.
