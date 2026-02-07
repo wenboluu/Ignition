@@ -11,6 +11,8 @@ set timeout -1
 set server "torch"
 set url "https://login.microsoftonline.com/common/oauth2/deviceauth"
 set browser_auth_wait 4
+set paste_delay 1
+set press_enter_interval 0.15
 if {[info exists env(LOGIN_VERBOSE)]} {
   set verbose $env(LOGIN_VERBOSE)
 } else {
@@ -67,30 +69,33 @@ proc copy_pin {pin} {
 }
 
 # -----------------------------------------------------------------------------
-# Platform: send Paste then three Enters (1s between Enters) to focused window
+# Platform: send Paste then three Enters (press_enter_interval between Enters)
 # -----------------------------------------------------------------------------
 proc send_paste_enter_darwin {} {
+  set i $::press_enter_interval
   catch {
     exec osascript -e "tell application \"System Events\" to keystroke \"v\" using command down" \
       -e "tell application \"System Events\" to key code 36" \
-      -e "delay 1" -e "tell application \"System Events\" to key code 36" \
-      -e "delay 1" -e "tell application \"System Events\" to key code 36"
+      -e "delay $i" -e "tell application \"System Events\" to key code 36" \
+      -e "delay $i" -e "tell application \"System Events\" to key code 36"
   }
 }
 
 proc send_paste_enter_windows {} {
+  set i $::press_enter_interval
   catch {
-    exec powershell -noprofile -command "Add-Type -AssemblyName System.Windows.Forms; \[System.Windows.Forms.SendKeys\]::SendWait('^v'); \[System.Windows.Forms.SendKeys\]::SendWait('{ENTER}'); Start-Sleep -Seconds 1; \[System.Windows.Forms.SendKeys\]::SendWait('{ENTER}'); Start-Sleep -Seconds 1; \[System.Windows.Forms.SendKeys\]::SendWait('{ENTER}')"
+    exec powershell -noprofile -command "Add-Type -AssemblyName System.Windows.Forms; \[System.Windows.Forms.SendKeys\]::SendWait('^v'); \[System.Windows.Forms.SendKeys\]::SendWait('{ENTER}'); Start-Sleep -Seconds $i; \[System.Windows.Forms.SendKeys\]::SendWait('{ENTER}'); Start-Sleep -Seconds $i; \[System.Windows.Forms.SendKeys\]::SendWait('{ENTER}')"
   }
 }
 
 proc send_paste_enter_linux {} {
-  catch { exec sh -c "xdotool key ctrl+v Return; sleep 1; xdotool key Return; sleep 1; xdotool key Return" }
-  catch { exec sh -c "ydotool key ctrl+v 28; sleep 1; ydotool key 28; sleep 1; ydotool key 28" }
+  set i $::press_enter_interval
+  catch { exec sh -c "xdotool key ctrl+v Return; sleep $i; xdotool key Return; sleep $i; xdotool key Return" }
+  catch { exec sh -c "ydotool key ctrl+v 28; sleep $i; ydotool key 28; sleep $i; ydotool key 28" }
 }
 
 proc send_paste_enter {} {
-  exec sleep 1
+  exec sleep $::paste_delay
   if {$::tcl_platform(platform) == "windows"} { send_paste_enter_windows } \
   elseif {$::tcl_platform(os) == "Darwin"} { send_paste_enter_darwin } \
   else { send_paste_enter_linux }

@@ -80,7 +80,7 @@ chmod +x ignite
 
 ```bash
 # In ~/.zshrc or ~/.bashrc
-export PATH="$PATH:$HOME/bin"
+export PATH="$PATH:$HOME/bin/Ignition"
 ```
 
 Then reload your shell (`source ~/.zshrc` or open a new terminal). You can run `ignite` from any directory.
