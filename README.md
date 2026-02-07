@@ -1,6 +1,7 @@
 # Ignition (🔥+🪵=🗽)
 
-SSH to NYU Torch (HPC) in one command, then reuse that connection from your terminal and IDE for hours—without doing Microsoft device-code auth again.
+**One command · One Microsoft login · Zero repeated auth**  
+Hours of uninterrupted access to **NYU Torch** from your terminal and IDE.
 
 **Two goals:**
 
