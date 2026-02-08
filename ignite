@@ -10,9 +10,9 @@
 set timeout -1
 set server "torch"
 set url "https://login.microsoftonline.com/common/oauth2/deviceauth"
-set browser_auth_wait 3
+set browser_auth_wait 5
 set paste_delay 0.5
-set press_enter_interval 0.5
+set press_enter_interval 1
 if {[info exists env(LOGIN_VERBOSE)]} {
   set verbose $env(LOGIN_VERBOSE)
 } else {
@@ -137,25 +137,19 @@ expect {
 
     send "\r"
 
-    # Short wait to detect obvious auth failure (don't consume success output)
-    set timeout 4
-    set auth_failed 0
-    expect {
-      -re -nocase {(.*permission denied|access denied|authentication failed.*)} {
-        set auth_failed 1
-        set err_line [string trim $expect_out(1,string)]
-      }
-      timeout { }
+    # Probe: run a second SSH over the same ControlMaster; if it gets through, auth succeeded
+    exec sleep 2
+    set auth_ok 0
+    if {![catch { exec ssh -o BatchMode=yes -o ConnectTimeout=6 $server echo ok 2>/dev/null } out]} {
+      if {[string trim $out] == "ok"} { set auth_ok 1 }
     }
-    set timeout -1
 
     puts "\n"
-    if {$auth_failed} {
-      log 0 "  → Auth failed.\n"
-      if {[info exists err_line] && $err_line != ""} { log 0 "    $err_line\n" }
-      log 0 "  Check browser and try again.\n\n"
-    } else {
+    if {$auth_ok} {
       log 0 "  → SSH session ready. You're in.\n\n"
+    } else {
+      log 0 "  → Auth may have failed or connection not ready.\n"
+      log 0 "  Check browser and try again, or press Enter in the session.\n\n"
     }
 
     log_user 1
