@@ -106,8 +106,8 @@ ignite
 
 1. SSH starts to **torch**.
 2. On “Authenticate with PIN …”, the script opens the login URL and copies the PIN to the clipboard.
-3. ~1s later it sends **Paste** + **3× Enter** to the focused window — focus the browser first.
-4. After `browser_auth_wait` seconds (default 4), it sends **Enter** to SSH and hands control to you.
+3. ~1s later it sends **Paste** + **5× Enter** to the focused window — focus the browser first.
+4. After `browser_auth_wait` seconds (default 3), it sends **Enter** to SSH and hands control to you.
 
 ### 2.3 Verbosity:
 - `quiet` or `q` (only errors and outcome)
@@ -135,9 +135,9 @@ So: run `ignite` once to get through Microsoft auth and establish the persistent
 
 ## 4. Tuning
 
-1. **Delay before sending Enter to SSH:** Change `set browser_auth_wait 4` (near the top) to the number of seconds you generally need to finish login in the browser (e.g., set it to `10` if you often need more time).
+1. **Delay before sending Enter to SSH:** Change `set browser_auth_wait 3` (near the top) to the number of seconds you generally need to finish login in the browser (e.g., set it to `10` if you often need more time).
 2. **Delay between opening the URL and simulating Paste:** Change `set paste_delay 1` (default is 1 second) if you want to make the script paste the PIN sooner or give yourself more time to switch focus to your browser.
-3. **Interval between each simulated Enter after Paste:** Change `set press_enter_interval 0.15` (default is 0.15 seconds) to adjust how quickly each Enter key press is sent after pasting.
+3. **Interval between each simulated Enter after Paste:** Change `set press_enter_interval 0.5` (default is 0.5 seconds) to adjust how quickly each Enter key press is sent after pasting.
 
 All these settings appear near the top of `ignite`. Adjust them if you want to make the flow faster or slower for your own pace.
 
