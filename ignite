@@ -126,7 +126,7 @@ expect {
     log 1 "  PIN copied to clipboard.\n"
     log_line
 
-    log 1 "  In ~1s we'll send Paste + 5× Enter to the focused window (use the browser).\n"
+    log 1 "  In ~${paste_delay}s we'll send Paste + 5× Enter to the focused window (use the browser).\n"
     log 1 "  Then we wait ${browser_auth_wait}s and send ENTER to this SSH session.\n"
     log_line
 
