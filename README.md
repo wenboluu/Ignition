@@ -146,6 +146,11 @@ All these settings appear near the top of `ignite`. Adjust them if you want to m
 - The script uses your **default browser** and simulates Paste + Enter; it does not install or drive a separate browser.
 - First run may prompt you to accept the host key; with the config above, later runs reuse the same connection while it’s alive.
 
+## FAQ
+**Q:** Why does my terminal show “SSH session ready” while the browser reports an invalid PIN?
+
+**A:** This usually happens due to **timing**. The browser authentication page may not have fully refreshed before the SSH login completed. This is often caused by **network latency** or **insufficient wait time** between automated steps. Increasing the delay between operations and restarting the authentication flow typically resolves the issue.
+
 ## Acknowledgements
 
 - The use of `expect` was inspired by [JosiahWayne](https://github.com/JosiahWayne/torch-login). I spent a long time trying to extract the device code from an interactive terminal session, and this approach solves that problem cleanly and reliably.
