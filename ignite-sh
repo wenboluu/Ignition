@@ -1,0 +1,164 @@
+#!/usr/bin/expect -f
+# SSH login with password + Duo push for nyushhpc (NYU Shanghai HPC).
+# Password is read from macOS Keychain.
+# First-time setup (one-time):
+#   security add-generic-password -a <ssh_user> -s ignite-<server> -w
+# Default server is "nyushhpc"; account is the User from `ssh -G <server>`.
+#
+# Usage: ignite-sh [quiet|q|verbose|v|vv] [server]
+#   LOGIN_VERBOSE=0|1|2  same (0=quiet, 1=verbose, 2=vv)
+
+set timeout 120
+set server "nyushhpc"
+if {[info exists env(LOGIN_VERBOSE)]} {
+  set verbose $env(LOGIN_VERBOSE)
+} else {
+  set verbose 1
+}
+
+foreach a $argv {
+  if {$a == "quiet" || $a == "q"} { set verbose 0 } \
+  elseif {$a == "verbose" || $a == "v"} { set verbose 1 } \
+  elseif {$a == "vv"} { set verbose 2 } \
+  elseif {[string index $a 0] != "-"} { set server $a }
+}
+
+# -----------------------------------------------------------------------------
+# Logging
+# -----------------------------------------------------------------------------
+proc log {level msg} {
+  if {$::verbose >= $level} {
+    set ts [clock format [clock seconds] -format "%Y-%m-%d %H:%M:%S"]
+    send_user "\[$ts\] $msg"
+  }
+}
+proc log_line {} { log 2 "  ---\n" }
+
+# -----------------------------------------------------------------------------
+# Resolve effective SSH user via `ssh -G`
+# -----------------------------------------------------------------------------
+set ssh_user ""
+if {![catch { exec ssh -G $server } cfg]} {
+  foreach line [split $cfg "\n"] {
+    if {[regexp {^user (.+)$} $line _ u]} {
+      set ssh_user [string trim $u]
+      break
+    }
+  }
+}
+if {$ssh_user == ""} { set ssh_user $env(USER) }
+
+# -----------------------------------------------------------------------------
+# Fetch password from macOS Keychain
+# -----------------------------------------------------------------------------
+set kc_service "ignite-$server"
+if {[catch { exec security find-generic-password -a $ssh_user -s $kc_service -w } password]} {
+  log 0 "\n  ERROR: No Keychain item for service '$kc_service' account '$ssh_user'.\n"
+  log 0 "  Create it once with:\n"
+  log 0 "    security add-generic-password -a $ssh_user -s $kc_service -w\n"
+  log 0 "  (You'll be prompted for the password; it is stored encrypted in your login keychain.)\n\n"
+  exit 1
+}
+set password [string trim $password]
+
+set ready_token "ignite-master-ready"
+
+log 1 "\n  Spawning: ssh -M $server (user: $ssh_user) with a probe command\n"
+log_line
+
+# -----------------------------------------------------------------------------
+# Clean up any stale ControlMaster socket before spawning
+# -----------------------------------------------------------------------------
+catch { exec ssh -O exit $server } _exit_msg
+set ctl_path ""
+if {![catch { exec ssh -G $server } cfg]} {
+  foreach line [split $cfg "\n"] {
+    if {[regexp {^controlpath (.+)$} $line _ p]} {
+      set ctl_path [string trim $p]
+      break
+    }
+  }
+}
+if {$ctl_path != "" && [file exists $ctl_path]} {
+  log 2 "  Removing stale ControlSocket: $ctl_path\n"
+  catch { file delete -- $ctl_path }
+}
+
+# -----------------------------------------------------------------------------
+# Spawn SSH master and walk through password + Duo prompts
+# -----------------------------------------------------------------------------
+# In vv mode, stream ssh's own output so prompts/errors are visible.
+if {$verbose >= 2} { log_user 1 } else { log_user 0 }
+spawn ssh -M $server "echo $ready_token"
+
+set saw_password 0
+set saw_ready 0
+
+expect {
+  -re {[Pp]assword:} {
+    if {$saw_password} {
+      log 0 "\n  ERROR: Password prompt re-issued. Likely wrong password in Keychain.\n"
+      exit 1
+    }
+    set saw_password 1
+    log 1 "  Password prompt received; sending from Keychain.\n"
+    log_user 0
+    send -- "$password\r"
+    after 200
+    if {$verbose >= 2} { log_user 1 }
+    # Some Duo configurations show a "Passcode or option (1-3):" menu; others
+    # send a push automatically. Sending "1" handles the menu case and is
+    # harmlessly discarded by the remote in the auto-push case.
+    after 800
+    log 2 "  Sending '1' for Duo (harmless if auto-push).\n"
+    send -- "1\r"
+    exp_continue
+  }
+  -re {[Dd]uo|[Pp]ushed a login request|[Aa]pprove} {
+    log 1 "  Duo push sent. → Approve on your phone now.\n"
+    exp_continue
+  }
+  -ex $ready_token {
+    set saw_ready 1
+    log 1 "  Auth succeeded; master is up.\n"
+    exp_continue
+  }
+  -re {[Pp]ermission denied} {
+    log 0 "\n  ERROR: Permission denied.\n"
+    exit 1
+  }
+  timeout {
+    log 0 "\n  ERROR: Timed out waiting for auth to complete.\n"
+    log 0 "  Did you approve the Duo push in time? Internet/VPN OK?\n"
+    exit 1
+  }
+  eof {}
+}
+
+if {!$saw_ready} {
+  log 0 "\n  ERROR: SSH exited before confirming success.\n"
+  log 0 "  Likely the password was rejected or Duo wasn't approved.\n"
+  exit 1
+}
+
+# -----------------------------------------------------------------------------
+# Probe: a second ssh over the same ControlMaster verifies auth succeeded
+# -----------------------------------------------------------------------------
+exec sleep 1
+set auth_ok 0
+# `ssh -O check` queries the local ControlMaster and ignores the remote shell,
+# so .bashrc noise on the remote can't pollute the result.
+if {![catch { exec ssh -O check $server } out]} {
+  if {[string match "*Master running*" $out]} { set auth_ok 1 }
+}
+
+log_user 1
+puts "\n"
+if {$auth_ok} {
+  log 0 "  → SSH session ready. You're in. (master persists per ControlPersist)\n\n"
+  exit 0
+} else {
+  log 0 "  → Auth may have failed or connection not ready.\n"
+  log 0 "  Try again, or check Keychain password / Duo approval.\n\n"
+  exit 1
+}
